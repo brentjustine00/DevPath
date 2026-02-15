@@ -1,0 +1,183 @@
+@import url("https://fonts.googleapis.com/css2?family=Fraunces:wght@400;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-ink: 10 10 10;
+  --color-glow: 120 204 255;
+  --color-neon: 89 255 208;
+  --color-mist: 255 244 206;
+  --color-paper: 255 250 235;
+  --color-surface: 255 255 255;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Space Grotesk", ui-sans-serif, system-ui, sans-serif;
+  color: rgb(var(--color-ink));
+  background: radial-gradient(circle at top left, rgba(255, 243, 187, 0.55), transparent 45%),
+    radial-gradient(circle at 30% 40%, rgba(255, 231, 143, 0.35), transparent 55%),
+    linear-gradient(160deg, #fffdf5 0%, #fff6d9 45%, #fff1c2 100%);
+  min-height: 100vh;
+}
+
+html.dark body {
+  color: #f8fafc;
+  background: radial-gradient(circle at top left, rgba(56, 189, 248, 0.18), transparent 45%),
+    radial-gradient(circle at 30% 40%, rgba(16, 185, 129, 0.12), transparent 55%),
+    linear-gradient(160deg, #0b1120 0%, #111827 45%, #0f172a 100%);
+}
+
+html.dark {
+  --color-paper: 15 23 42;
+  --color-surface: 17 24 39;
+  --color-mist: 30 41 59;
+}
+
+.dark .text-ink\/50 {
+  color: rgb(148 163 184);
+}
+
+.dark .text-ink\/60 {
+  color: rgb(148 163 184);
+}
+
+.dark .text-ink\/70 {
+  color: rgb(203 213 225);
+}
+
+.dark .text-ink\/80 {
+  color: rgb(226 232 240);
+}
+
+.dark .text-ink {
+  color: rgb(248 250 252);
+}
+
+.surface {
+  background-color: rgb(var(--color-surface) / 0.75);
+  border-color: rgb(var(--color-mist) / 0.5);
+}
+
+html:not(.dark) .bg-white\/70 {
+  background-color: rgba(255, 250, 235, 0.82);
+}
+
+html:not(.dark) .bg-white\/80 {
+  background-color: rgba(255, 250, 235, 0.9);
+}
+
+html:not(.dark) .bg-paper\/80 {
+  background-color: rgba(255, 245, 214, 0.88);
+}
+
+html:not(.dark) .bg-paper\/70 {
+  background-color: rgba(255, 245, 214, 0.78);
+}
+
+html:not(.dark) .bg-paper\/60 {
+  background-color: rgba(255, 245, 214, 0.68);
+}
+
+html:not(.dark) .bg-white\/70 *,
+html:not(.dark) .bg-white\/80 *,
+html:not(.dark) .bg-paper\/80 *,
+html:not(.dark) .bg-paper\/70 *,
+html:not(.dark) .bg-paper\/60 * {
+  color: #000000 !important;
+}
+
+html:not(.dark) .border-ink\/10 {
+  border-color: rgba(60, 50, 20, 0.12);
+}
+
+html:not(.dark) .bg-ink {
+  background-color: #ffffff;
+}
+
+html:not(.dark) .text-paper {
+  color: #000000;
+}
+
+
+html:not(.dark) .text-ink\/50,
+html:not(.dark) .text-ink\/60,
+html:not(.dark) .text-ink\/70,
+html:not(.dark) .text-ink\/80,
+html:not(.dark) .text-ink {
+  color: rgb(10 10 10) !important;
+}
+
+html:not(.dark) .text-white,
+html:not(.dark) .text-white\/50,
+html:not(.dark) .text-white\/60,
+html:not(.dark) .text-white\/70,
+html:not(.dark) .text-white\/80,
+html:not(.dark) .text-white\/90,
+html:not(.dark) .text-paper {
+  color: rgb(10 10 10) !important;
+}
+
+html:not(.dark) body,
+html:not(.dark) body * {
+  color: rgb(10 10 10);
+}
+
+html:not(.dark) .preview-dark * {
+  color: rgb(248 250 252) !important;
+}
+
+html:not(.dark) .preview-dark .bg-white\/70,
+html:not(.dark) .preview-dark .bg-white\/80,
+html:not(.dark) .preview-dark .bg-paper\/80,
+html:not(.dark) .preview-dark .bg-paper\/70,
+html:not(.dark) .preview-dark .bg-paper\/60 {
+  background-color: rgba(15, 23, 42, 0.78) !important;
+  border-color: rgba(51, 65, 85, 0.7) !important;
+}
+
+html:not(.dark) .preview-dark .border-ink\/10 {
+  border-color: rgba(51, 65, 85, 0.7) !important;
+}
+
+html:not(.dark) .preview-dark .bg-ink {
+  background-color: rgb(248 250 252) !important;
+}
+
+html:not(.dark) .preview-dark .text-paper {
+  color: rgb(15 23 42) !important;
+}
+
+html.dark .preview-light .bg-white\/70,
+html.dark .preview-light .bg-white\/80,
+html.dark .preview-light .bg-paper\/80,
+html.dark .preview-light .bg-paper\/70,
+html.dark .preview-light .bg-paper\/60 {
+  background-color: rgba(255, 245, 214, 0.88) !important;
+  border-color: rgba(60, 50, 20, 0.12) !important;
+}
+
+html.dark .preview-light .border-ink\/10 {
+  border-color: rgba(60, 50, 20, 0.12) !important;
+}
+
+html.dark .preview-light * {
+  color: rgb(10 10 10) !important;
+}
+
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+img {
+  max-width: 100%;
+  display: block;
+}
