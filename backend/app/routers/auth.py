@@ -93,18 +93,36 @@ def github_callback(code: str = Query(...), db: Session = Depends(get_db)):
             )
 
     gamification = compute_xp_and_badges(summaries)
-    db.query(Badge).filter(Badge.user_id == user.id).delete()
+    existing_badges = {
+        badge.label: badge for badge in db.query(Badge).filter(Badge.user_id == user.id).all()
+    }
+    seen_labels: set[str] = set()
     for badge in gamification.badges:
-        db.add(
-            Badge(
-                user_id=user.id,
-                label=badge["label"],
-                description=badge["description"],
-                criteria=badge["criteria"],
-                rarity=badge["rarity"],
-                achieved=badge["achieved"],
+        seen_labels.add(badge["label"])
+        existing = existing_badges.get(badge["label"])
+        if existing:
+            existing.description = badge["description"]
+            existing.criteria = badge["criteria"]
+            existing.rarity = badge["rarity"]
+            existing.achieved = badge["achieved"]
+            if badge["achieved"] is False:
+                existing.claimed = False
+        else:
+            db.add(
+                Badge(
+                    user_id=user.id,
+                    label=badge["label"],
+                    description=badge["description"],
+                    criteria=badge["criteria"],
+                    rarity=badge["rarity"],
+                    achieved=badge["achieved"],
+                    claimed=False,
+                )
             )
-        )
+
+    for label, stale in existing_badges.items():
+        if label not in seen_labels:
+            db.delete(stale)
 
     db.commit()
 

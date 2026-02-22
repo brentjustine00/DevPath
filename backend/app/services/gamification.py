@@ -3,6 +3,30 @@ from __future__ import annotations
 from collections import Counter
 from dataclasses import dataclass
 
+IGNORED_LANGUAGE_BADGE_SET = {
+    "html",
+    "css",
+    "scss",
+    "sass",
+    "less",
+    "stylus",
+    "dockerfile",
+    "makefile",
+    "shell",
+    "batchfile",
+    "powershell",
+    "json",
+    "yaml",
+    "toml",
+    "markdown",
+    "mdx",
+}
+
+LANGUAGE_ALIAS_MAP = {
+    "jupyter notebook": "python",
+    "plpgsql": "sql",
+}
+
 
 @dataclass
 class GamificationResult:
@@ -24,7 +48,17 @@ def compute_xp_and_badges(repos: list[dict]) -> GamificationResult:
             languages.extend([lang for lang in repo_languages if lang])
         else:
             languages.append(repo.get("language") or "Unknown")
-    language_counts = Counter(languages)
+    normalized_languages = []
+    for lang in languages:
+        value = str(lang).strip().lower()
+        if not value or value == "unknown":
+            continue
+        value = LANGUAGE_ALIAS_MAP.get(value, value)
+        if value in IGNORED_LANGUAGE_BADGE_SET:
+            continue
+        normalized_languages.append(value)
+
+    language_counts = Counter(normalized_languages)
     language_xp = max(0, len(language_counts) - 1) * 30
     stars_xp = sum(repo.get("stars", 0) for repo in repos)
     xp = commit_xp + repo_xp + language_xp + stars_xp

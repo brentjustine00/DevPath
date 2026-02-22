@@ -14,7 +14,6 @@ from app.schemas import (
 )
 from app.services.groq import infer_practice_and_careers
 from app.services.gamification import compute_xp_and_badges
-from app.services.groq import infer_practice_and_careers
 
 
 router = APIRouter(prefix="/api", tags=["users"])
@@ -186,6 +185,7 @@ def recompute_insights(
             "name": repo.name,
             "description": repo.description,
             "language": repo.language,
+            "languages": repo.languages,
             "stars": repo.stars,
             "topics": repo.topics,
             "last_push": repo.last_push,
