@@ -9,18 +9,27 @@ import LearningPathsPage from "./pages/LearningPathsPage"
 import PublicPortfolioPage from "./pages/PublicPortfolioPage"
 import RegisterPage from "./pages/RegisterPage"
 import AchievementsPage from "./pages/AchievementsPage"
-import { setStoredAuth } from "./lib/api"
+import { getStoredAuth, setStoredAuth } from "./lib/api"
+import NotFoundPage from "./pages/NotFoundPage"
 
 export default function App() {
   const location = useLocation()
   const isPublicPortfolio = location.pathname.startsWith("/p/")
+  const auth = getStoredAuth()
 
   useEffect(() => {
     const params = new URLSearchParams(location.search)
     const token = params.get("token") || ""
     const username = params.get("username") || ""
-    if (token || username) {
+    const stored = getStoredAuth()
+    // Accept query params only for real auth callback flows (token present).
+    // Ignore standalone username query changes to avoid switching accounts unintentionally.
+    if (token && username) {
       setStoredAuth(token, username)
+      return
+    }
+    if (token && stored.username) {
+      setStoredAuth(token, stored.username)
     }
   }, [location.search])
 
@@ -39,14 +48,33 @@ export default function App() {
       {!isPublicPortfolio ? <Navbar /> : null}
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
-        <Route path="/learning-paths" element={<LearningPathsPage />} />
-        <Route path="/leaderboard" element={<LeaderboardPage />} />
-        <Route path="/achievements" element={<AchievementsPage />} />
-        <Route path="/portfolio/:username" element={<PublicPortfolioPage mode="owner" />} />
+        <Route
+          path="/dashboard"
+          element={<DashboardPage />}
+        />
+        <Route
+          path="/learning-paths"
+          element={<LearningPathsPage />}
+        />
+        <Route
+          path="/leaderboard"
+          element={<LeaderboardPage />}
+        />
+        <Route
+          path="/achievements"
+          element={<AchievementsPage />}
+        />
+        <Route
+          path="/portfolio/:username"
+          element={auth.username ? <PublicPortfolioPage mode="owner" /> : <NotFoundPage message="Sign in to view this page." />}
+        />
         <Route path="/p/:username" element={<PublicPortfolioPage mode="public" />} />
-        <Route path="/my-portfolio" element={<PublicPortfolioPage mode="owner" />} />
+        <Route
+          path="/my-portfolio"
+          element={<PublicPortfolioPage mode="owner" />}
+        />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
       {!isPublicPortfolio ? <Footer /> : null}
     </div>

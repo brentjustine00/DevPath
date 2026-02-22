@@ -27,6 +27,8 @@ export type RepoSummary = {
   name: string
   description: string
   language: string
+  languages?: string[]
+  htmlUrl?: string
   stars: number
   lastUpdated?: string
   last_push?: string | null
@@ -70,7 +72,7 @@ export type PortfolioResponse = UserResponse & {
     show_sections?: Record<string, boolean>
     featured_repos?: string[]
     featured_badges?: string[]
-    social_links?: Record<string, string>
+    social_links?: Record<string, unknown>
     bio?: string
     cover_image?: string
     is_public?: boolean

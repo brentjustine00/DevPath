@@ -79,6 +79,8 @@ function normalizeResponse(data: {
     name: string
     description?: string | null
     language?: string | null
+    languages?: string[] | null
+    html_url?: string | null
     stars: number
     last_push?: string | null
     commit_count?: number
@@ -93,6 +95,8 @@ function normalizeResponse(data: {
       name: repo.name,
       description: repo.description || "",
       language: repo.language || "Unknown",
+      languages: repo.languages || [],
+      htmlUrl: repo.html_url || undefined,
       stars: repo.stars,
       last_push: repo.last_push || undefined,
       commitCount: repo.commit_count,
@@ -193,7 +197,7 @@ export async function updateSettings(
     show_sections?: Record<string, boolean>
     featured_repos?: string[]
     featured_badges?: string[]
-    social_links?: Record<string, string>
+    social_links?: Record<string, unknown>
     bio?: string
     cover_image?: string
     is_public?: boolean

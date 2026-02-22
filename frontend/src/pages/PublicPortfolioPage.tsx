@@ -1,15 +1,9 @@
 import { useEffect, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import PortfolioPreview from "../components/PortfolioPreview"
-import {
-  badges,
-  careerSuggestions,
-  featuredRepos as mockFeaturedRepos,
-  practiceDimensions,
-  profile,
-} from "../data/mock"
-import { fetchOwnerPortfolio, fetchPortfolio, getStoredAuth, updateSettings } from "../lib/api"
-import type { PortfolioResponse } from "../types"
+import { badges, featuredRepos as mockFeaturedRepos, profile } from "../data/mock"
+import { fetchOwnerPortfolio, fetchPortfolio, fetchUser, getStoredAuth, updateSettings } from "../lib/api"
+import type { PortfolioResponse, RepoSummary } from "../types"
 
 type PublicPortfolioPageProps = {
   mode?: "public" | "owner"
@@ -21,6 +15,69 @@ const themes = [
   { id: "ocean", label: "Ocean" },
 ]
 
+function parseStringList(value: unknown) {
+  if (!Array.isArray(value)) {
+    return [] as string[]
+  }
+  return value.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+}
+
+function parseString(value: unknown) {
+  return typeof value === "string" ? value : ""
+}
+
+function deriveGeneratedTechStack(repos: RepoSummary[]) {
+  const ordered = new Map<string, string>()
+
+  repos.forEach((repo) => {
+    if (repo.language && repo.language !== "Unknown") {
+      ordered.set(repo.language.toLowerCase(), repo.language)
+    }
+    ;(repo.languages || []).forEach((language) => {
+      ordered.set(language.toLowerCase(), language)
+    })
+    const description = (repo.description || "").toLowerCase()
+    if (description.includes("react")) ordered.set("react", "React")
+    if (description.includes("tailwind")) ordered.set("tailwindcss", "TailwindCSS")
+    if (description.includes("fastapi")) ordered.set("fastapi", "FastAPI")
+    if (description.includes("postgres")) ordered.set("postgresql", "PostgreSQL")
+  })
+
+  return Array.from(ordered.values()).slice(0, 12)
+}
+
+function deriveGeneratedAbout(
+  displayName: string,
+  username: string,
+  repos: RepoSummary[],
+  techStack: string[]
+) {
+  const profileName = displayName || username
+  const topRepoNames = repos.map((repo) => repo.name).slice(0, 3)
+  const topStack = techStack.slice(0, 3)
+  const stackText = topStack.length > 0 ? topStack.join(", ") : "modern web technologies"
+  const repoText =
+    topRepoNames.length > 0 ? topRepoNames.join(", ") : "portfolio-driven product work"
+  const opening = [
+    `${profileName} is building a practical engineering journey around ${stackText}, with a focus on shipping features that solve real user problems.`,
+    `${profileName} is actively growing as a builder through hands-on projects in ${stackText}, prioritizing clean execution and production-ready habits.`,
+    `${profileName} is shaping a full-stack profile using ${stackText}, with consistent iteration, better architecture decisions, and user-centered delivery.`,
+  ]
+  const middle = [
+    `Current project work includes ${repoText}, where each repository is used to practice maintainable code structure, readable documentation, and incremental releases.`,
+    `Recent repositories such as ${repoText} are being used to strengthen planning, implementation, and polish from first commit to deployed output.`,
+    `The repository set, including ${repoText}, reflects a process-first approach: design, build, test, review, and improve.`,
+  ]
+  const closing = [
+    `The goal is to keep compounding technical depth while building a portfolio that demonstrates both product sense and engineering reliability.`,
+    `Long-term, the direction is clear: turn consistent project execution into stronger system thinking and more complete end-to-end delivery.`,
+    `Each cycle is focused on measurable progress: better code quality, better UX decisions, and stronger collaboration readiness.`,
+  ]
+
+  const pick = (items: string[]) => items[Math.floor(Math.random() * items.length)]
+  return `${pick(opening)} ${pick(middle)} ${pick(closing)}`
+}
+
 export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolioPageProps) {
   const { username } = useParams()
   const [theme, setTheme] = useState("aurora")
@@ -30,23 +87,33 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
   const [showRepos, setShowRepos] = useState(true)
   const [selectedRepos, setSelectedRepos] = useState<string[]>([])
   const [selectedBadges, setSelectedBadges] = useState<string[]>([])
+  const [badgeSelectionTouched, setBadgeSelectionTouched] = useState(false)
   const [data, setData] = useState<PortfolioResponse | null>(null)
   const [saving, setSaving] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
   const [previewDark, setPreviewDark] = useState(false)
+  const [generatedTechStack, setGeneratedTechStack] = useState<string[]>([])
+  const [manualTechStackInput, setManualTechStackInput] = useState("")
+  const [generatedAbout, setGeneratedAbout] = useState("")
+  const [manualAbout, setManualAbout] = useState("")
+  const [contactEmail, setContactEmail] = useState("")
+  const [contactLinkedin, setContactLinkedin] = useState("")
+  const [contactPhone, setContactPhone] = useState("")
 
   const auth = getStoredAuth()
   const resolvedUsername = mode === "owner" ? auth.username || username : username
   const isOwner = mode === "owner"
   const isLoggedIn = Boolean(auth.username)
+  const canCustomize = isOwner && isLoggedIn
 
   useEffect(() => {
     if (!resolvedUsername) {
       if (isOwner && !isLoggedIn) {
+        const mockTechStack = deriveGeneratedTechStack(mockFeaturedRepos)
         setData({
           profile,
-          practice_dimensions: practiceDimensions,
-          career_suggestions: careerSuggestions,
+          practice_dimensions: [],
+          career_suggestions: [],
           badges: badges.map((badge) => ({ ...badge, achieved: true, claimed: true })),
           repos: mockFeaturedRepos,
           settings: {
@@ -56,19 +123,40 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
             show_sections: { badges: true, repos: true, preview_dark: false },
             featured_repos: [],
             featured_badges: [],
+            social_links: {
+              about_generated: deriveGeneratedAbout(profile.displayName, profile.username, mockFeaturedRepos, mockTechStack),
+              tech_stack_generated: mockTechStack,
+            },
             is_public: true,
           },
         })
       }
       return
     }
-    const load = isOwner && isLoggedIn && auth.token
-      ? fetchOwnerPortfolio(auth.token)
-      : fetchPortfolio(resolvedUsername)
+
+    const load =
+      isOwner && isLoggedIn && auth.token
+        ? fetchOwnerPortfolio(auth.token)
+        : isOwner
+          ? fetchUser(resolvedUsername).then((payload) => ({
+              ...payload,
+              settings: {
+                theme: "aurora",
+                theme_light: "aurora",
+                theme_dark: "aurora",
+                show_sections: { badges: true, repos: true, preview_dark: false },
+                featured_repos: [],
+                featured_badges: [],
+                social_links: {},
+                is_public: true,
+              },
+            }))
+          : fetchPortfolio(resolvedUsername)
 
     load
       .then((payload) => {
         setData(payload)
+
         const resolvedLight = payload.settings?.theme_light || payload.settings?.theme || "aurora"
         const resolvedDark = payload.settings?.theme_dark || payload.settings?.theme || "aurora"
         const resolvedPreviewDark =
@@ -79,6 +167,7 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
         setThemeLight(resolvedLight)
         setThemeDark(resolvedDark)
         setTheme(resolvedPreviewDark ? resolvedDark : resolvedLight)
+
         if (payload.settings?.show_sections) {
           if (typeof payload.settings.show_sections.badges === "boolean") {
             setShowBadges(payload.settings.show_sections.badges)
@@ -87,19 +176,41 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
             setShowRepos(payload.settings.show_sections.repos)
           }
         }
+
         if (Array.isArray(payload.settings?.featured_repos)) {
           setSelectedRepos(payload.settings.featured_repos)
         }
         if (Array.isArray(payload.settings?.featured_badges)) {
           setSelectedBadges(payload.settings.featured_badges)
         }
+        setBadgeSelectionTouched(false)
+
+        const social = (payload.settings?.social_links || {}) as Record<string, unknown>
+        const computedTech = deriveGeneratedTechStack(payload.repos || [])
+        setGeneratedTechStack(computedTech)
+
+        const manualTech = parseStringList(social.tech_stack_manual)
+        setManualTechStackInput(manualTech.join(", "))
+
+        const computedAbout = deriveGeneratedAbout(
+          payload.profile.displayName,
+          payload.profile.username,
+          payload.repos || [],
+          computedTech
+        )
+        setGeneratedAbout(parseString(social.about_generated) || computedAbout)
+        setManualAbout(parseString(social.about_manual) || parseString(payload.settings?.bio))
+        setContactEmail(parseString(social.email))
+        setContactLinkedin(parseString(social.linkedin))
+        setContactPhone(parseString(social.phone))
       })
       .catch(() => {
         if (isOwner && !isLoggedIn) {
+          const mockTechStack = deriveGeneratedTechStack(mockFeaturedRepos)
           setData({
             profile,
-            practice_dimensions: practiceDimensions,
-            career_suggestions: careerSuggestions,
+            practice_dimensions: [],
+            career_suggestions: [],
             badges: badges.map((badge) => ({ ...badge, achieved: true, claimed: true })),
             repos: mockFeaturedRepos,
             settings: {
@@ -109,6 +220,10 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
               show_sections: { badges: true, repos: true, preview_dark: false },
               featured_repos: [],
               featured_badges: [],
+              social_links: {
+                about_generated: deriveGeneratedAbout(profile.displayName, profile.username, mockFeaturedRepos, mockTechStack),
+                tech_stack_generated: mockTechStack,
+              },
               is_public: true,
             },
           })
@@ -116,21 +231,17 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
         }
         setData(null)
       })
-  }, [resolvedUsername, isOwner, isLoggedIn])
+  }, [resolvedUsername, isOwner, isLoggedIn, auth.token])
 
   const resolvedProfile = data?.profile ?? profile
-  const resolvedPaths = data?.practice_dimensions ?? practiceDimensions
-  const resolvedCareers = data?.career_suggestions ?? careerSuggestions
   const resolvedBadges = data?.badges ?? badges
   const resolvedRepos = data?.repos ?? mockFeaturedRepos
-  const selectableBadges = resolvedBadges.filter((badge) => badge.claimed)
+  const selectableBadges = resolvedBadges.filter((badge) => badge.achieved)
   const selectableBadgeLabels = useMemo(
     () => new Set(selectableBadges.map((badge) => badge.label)),
     [selectableBadges]
   )
-  const effectiveSelectedBadges = selectedBadges.filter((label) =>
-    selectableBadgeLabels.has(label)
-  )
+  const effectiveSelectedBadges = selectedBadges.filter((label) => selectableBadgeLabels.has(label))
 
   useEffect(() => {
     if (selectedBadges.length === 0) {
@@ -142,9 +253,21 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
     }
   }, [selectableBadgeLabels, selectedBadges])
 
+  useEffect(() => {
+    if (!isOwner || badgeSelectionTouched || selectedBadges.length === 0) {
+      return
+    }
+    const hasNewAchievedBadges = selectableBadges.some(
+      (badge) => !selectedBadges.includes(badge.label)
+    )
+    if (hasNewAchievedBadges) {
+      // Auto-sync legacy saved selections by showing all achieved badges.
+      setSelectedBadges([])
+    }
+  }, [isOwner, badgeSelectionTouched, selectedBadges, selectableBadges])
+
   const repoSelectionActive = selectedRepos.length > 0
   const badgeSelectionActive = effectiveSelectedBadges.length > 0
-
   const visibleRepos = showRepos
     ? repoSelectionActive
       ? resolvedRepos.filter((repo) => selectedRepos.includes(repo.name))
@@ -155,6 +278,24 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
       ? resolvedBadges.filter((badge) => effectiveSelectedBadges.includes(badge.label))
       : resolvedBadges
     : []
+
+  const manualTechStack = useMemo(
+    () =>
+      manualTechStackInput
+        .split(",")
+        .map((item) => item.trim())
+        .filter((item) => item.length > 0),
+    [manualTechStackInput]
+  )
+
+  const mergedTechStack = useMemo(() => {
+    const ordered = new Map<string, string>()
+    generatedTechStack.forEach((item) => ordered.set(item.toLowerCase(), item))
+    manualTechStack.forEach((item) => ordered.set(item.toLowerCase(), item))
+    return Array.from(ordered.values())
+  }, [generatedTechStack, manualTechStack])
+
+  const effectiveAbout = manualAbout.trim() || generatedAbout.trim() || resolvedProfile.bio
 
   const effectivePreviewDark = isOwner
     ? previewDark
@@ -169,20 +310,12 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
 
   const themedClass = useMemo(() => {
     if (effectivePreviewDark) {
-      if (activeTheme === "sunset") {
-        return "bg-gradient-to-br from-rose-950 via-orange-950 to-amber-950"
-      }
-      if (activeTheme === "ocean") {
-        return "bg-gradient-to-br from-sky-950 via-cyan-950 to-blue-950"
-      }
+      if (activeTheme === "sunset") return "bg-gradient-to-br from-rose-950 via-orange-950 to-amber-950"
+      if (activeTheme === "ocean") return "bg-gradient-to-br from-sky-950 via-cyan-950 to-blue-950"
       return "bg-gradient-to-br from-indigo-950 via-slate-950 to-emerald-950"
     }
-    if (activeTheme === "sunset") {
-      return "bg-gradient-to-br from-rose-50 via-orange-50 to-amber-100"
-    }
-    if (activeTheme === "ocean") {
-      return "bg-gradient-to-br from-sky-50 via-cyan-50 to-blue-100"
-    }
+    if (activeTheme === "sunset") return "bg-gradient-to-br from-rose-50 via-orange-50 to-amber-100"
+    if (activeTheme === "ocean") return "bg-gradient-to-br from-sky-50 via-cyan-50 to-blue-100"
     return "bg-gradient-to-br from-indigo-50 via-slate-50 to-emerald-50"
   }, [activeTheme, effectivePreviewDark])
 
@@ -191,30 +324,35 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
       <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-ink/50 dark:text-white/60">Public Portfolio</p>
-          <h2 className="text-3xl font-semibold dark:text-white">
-            {isOwner ? "Customize your live profile" : "Portfolio"}
-          </h2>
+          <h2 className="text-3xl font-semibold dark:text-white">{isOwner ? "Customize your live profile" : "Portfolio"}</h2>
         </div>
         {isOwner ? (
           <div className="flex flex-wrap gap-2">
-            <button
-              onClick={async () => {
-                const url = `${window.location.origin}/p/${resolvedUsername}`
-                await navigator.clipboard.writeText(url)
-                setShareCopied(true)
-                setTimeout(() => setShareCopied(false), 2000)
-              }}
-              className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-paper shadow-glow dark:bg-slate-100 dark:text-slate-900"
-            >
-              {shareCopied ? "Copied!" : "Share portfolio URL"}
-            </button>
+            {canCustomize ? (
+              <button
+                onClick={async () => {
+                  if (!resolvedUsername) return
+                  await navigator.clipboard.writeText(`${window.location.origin}/p/${resolvedUsername}`)
+                  setShareCopied(true)
+                  setTimeout(() => setShareCopied(false), 2000)
+                }}
+                className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-paper shadow-glow dark:bg-slate-100 dark:text-slate-900"
+              >
+                {shareCopied ? "Copied!" : "Share portfolio URL"}
+              </button>
+            ) : (
+              <button
+                onClick={() => window.alert("Log in to customize your own portfolio.")}
+                className="rounded-full bg-ink px-5 py-2 text-sm font-semibold text-paper shadow-glow dark:bg-slate-100 dark:text-slate-900"
+              >
+                Customize portfolio
+              </button>
+            )}
             {auth.token ? (
               <button
                 disabled={saving}
                 onClick={async () => {
-                  if (!auth.token) {
-                    return
-                  }
+                  if (!auth.token) return
                   setSaving(true)
                   try {
                     const saveThemeLight = previewDark ? themeLight : theme
@@ -230,6 +368,16 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                       },
                       featured_repos: selectedRepos,
                       featured_badges: effectiveSelectedBadges,
+                      social_links: {
+                        email: contactEmail,
+                        linkedin: contactLinkedin,
+                        phone: contactPhone,
+                        about_generated: generatedAbout,
+                        about_manual: manualAbout,
+                        tech_stack_generated: generatedTechStack,
+                        tech_stack_manual: manualTechStack,
+                      },
+                      bio: manualAbout || undefined,
                     })
                     setData(updated)
                     setThemeLight(saveThemeLight)
@@ -251,13 +399,27 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
         {isOwner ? (
           <div className="space-y-4 rounded-3xl border border-ink/10 bg-white/70 p-6 shadow-soft backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/70">
             <h3 className="text-lg font-semibold">Customization</h3>
+            {!canCustomize ? (
+              <div className="rounded-2xl border border-ink/10 bg-paper/70 p-4 text-sm text-ink/70 dark:border-slate-700/60 dark:bg-slate-800/70 dark:text-white/70">
+                <p>Log in to customize your own portfolio.</p>
+                <button
+                  type="button"
+                  onClick={() => window.alert("Log in to customize your own portfolio.")}
+                  className="mt-3 rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                >
+                  Customize portfolio
+                </button>
+              </div>
+            ) : null}
+
             <div className="space-y-3">
               <label className="text-sm font-medium dark:text-white/80">Theme</label>
               <div className="flex flex-wrap gap-2">
-                <label className="flex items-center gap-2 rounded-full border px-4 py-2 text-xs font-semibold border-ink/20 text-ink/70 dark:border-white/20 dark:text-white/80">
+                <label className="flex items-center gap-2 rounded-full border border-ink/20 px-4 py-2 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80">
                   <input
                     type="checkbox"
                     checked={previewDark}
+                    disabled={!canCustomize}
                     onChange={(event) => {
                       const next = event.target.checked
                       setPreviewDark(next)
@@ -269,13 +431,11 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                 {themes.map((option) => (
                   <button
                     key={option.id}
+                    disabled={!canCustomize}
                     onClick={() => {
                       setTheme(option.id)
-                      if (previewDark) {
-                        setThemeDark(option.id)
-                      } else {
-                        setThemeLight(option.id)
-                      }
+                      if (previewDark) setThemeDark(option.id)
+                      else setThemeLight(option.id)
                     }}
                     className={`rounded-full border px-4 py-2 text-xs font-semibold ${
                       theme === option.id
@@ -288,6 +448,7 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                 ))}
               </div>
             </div>
+
             <div className="space-y-3">
               <label className="text-sm font-medium dark:text-white/80">Sections</label>
               <div className="flex flex-col gap-2 text-sm text-ink/70 dark:text-white/70">
@@ -295,6 +456,7 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                   <input
                     type="checkbox"
                     checked={showBadges}
+                    disabled={!canCustomize}
                     onChange={(event) => setShowBadges(event.target.checked)}
                   />
                   Show badges
@@ -303,12 +465,104 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                   <input
                     type="checkbox"
                     checked={showRepos}
+                    disabled={!canCustomize}
                     onChange={(event) => setShowRepos(event.target.checked)}
                   />
                   Show featured repos
                 </label>
               </div>
             </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium dark:text-white/80">Tech stack</label>
+                <button
+                  type="button"
+                  disabled={!canCustomize}
+                  onClick={() => setGeneratedTechStack(deriveGeneratedTechStack(resolvedRepos))}
+                  className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                >
+                  AI generate
+                </button>
+              </div>
+              <div className="rounded-2xl border border-ink/10 bg-paper/70 p-3 text-xs text-ink/70 dark:border-slate-700/60 dark:bg-slate-800/70 dark:text-white/70">
+                <p className="font-semibold">Generated</p>
+                <p className="mt-1">{generatedTechStack.join(", ") || "No generated stack yet."}</p>
+              </div>
+              <input
+                type="text"
+                value={manualTechStackInput}
+                disabled={!canCustomize}
+                onChange={(event) => setManualTechStackInput(event.target.value)}
+                placeholder="Manual add: React, FastAPI, PostgreSQL"
+                className="w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium dark:text-white/80">About me</label>
+                <button
+                  type="button"
+                  disabled={!canCustomize}
+                  onClick={() =>
+                    setGeneratedAbout(
+                      deriveGeneratedAbout(
+                        resolvedProfile.displayName,
+                        resolvedProfile.username,
+                        resolvedRepos,
+                        mergedTechStack
+                      )
+                    )
+                  }
+                  className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                >
+                  AI generate
+                </button>
+              </div>
+              <div className="rounded-2xl border border-ink/10 bg-paper/70 p-3 text-xs text-ink/70 dark:border-slate-700/60 dark:bg-slate-800/70 dark:text-white/70">
+                <p className="font-semibold">Generated</p>
+                <p className="mt-1">{generatedAbout || "No generated summary yet."}</p>
+              </div>
+              <textarea
+                value={manualAbout}
+                disabled={!canCustomize}
+                onChange={(event) => setManualAbout(event.target.value)}
+                placeholder="Manual add your about me..."
+                className="h-24 w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+              />
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-medium dark:text-white/80">Contact</label>
+              <div className="grid gap-2">
+                <input
+                  type="email"
+                  value={contactEmail}
+                  disabled={!canCustomize}
+                  onChange={(event) => setContactEmail(event.target.value)}
+                  placeholder="Email"
+                  className="w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                />
+                <input
+                  type="text"
+                  value={contactLinkedin}
+                  disabled={!canCustomize}
+                  onChange={(event) => setContactLinkedin(event.target.value)}
+                  placeholder="LinkedIn URL"
+                  className="w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                />
+                <input
+                  type="text"
+                  value={contactPhone}
+                  disabled={!canCustomize}
+                  onChange={(event) => setContactPhone(event.target.value)}
+                  placeholder="Contact number"
+                  className="w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                />
+              </div>
+            </div>
+
             <div className="space-y-3">
               <label className="text-sm font-medium dark:text-white/80">Featured repos to display</label>
               <div className="max-h-40 space-y-2 overflow-auto rounded-2xl border border-ink/10 bg-paper/70 p-3 text-sm text-ink/70 dark:border-slate-700/60 dark:bg-slate-800/70 dark:text-white/70">
@@ -320,12 +574,10 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                       <input
                         type="checkbox"
                         checked={selectedRepos.includes(repo.name)}
+                        disabled={!canCustomize}
                         onChange={(event) => {
-                          if (event.target.checked) {
-                            setSelectedRepos((prev) => [...prev, repo.name])
-                          } else {
-                            setSelectedRepos((prev) => prev.filter((item) => item !== repo.name))
-                          }
+                          if (event.target.checked) setSelectedRepos((prev) => [...prev, repo.name])
+                          else setSelectedRepos((prev) => prev.filter((item) => item !== repo.name))
                         }}
                       />
                       {repo.name}
@@ -334,25 +586,23 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                 )}
               </div>
             </div>
+
             <div className="space-y-3">
               <label className="text-sm font-medium dark:text-white/80">Badges to display</label>
               <div className="max-h-40 space-y-2 overflow-auto rounded-2xl border border-ink/10 bg-paper/70 p-3 text-sm text-ink/70 dark:border-slate-700/60 dark:bg-slate-800/70 dark:text-white/70">
                 {selectableBadges.length === 0 ? (
-                  <p className="text-xs text-ink/50 dark:text-white/60">
-                    Claim achievements first to feature badges here.
-                  </p>
+                  <p className="text-xs text-ink/50 dark:text-white/60">Achieve badges first to feature badges here.</p>
                 ) : (
                   selectableBadges.map((badge) => (
                     <label key={badge.label} className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={selectedBadges.includes(badge.label)}
+                        disabled={!canCustomize}
                         onChange={(event) => {
-                          if (event.target.checked) {
-                            setSelectedBadges((prev) => [...prev, badge.label])
-                          } else {
-                            setSelectedBadges((prev) => prev.filter((item) => item !== badge.label))
-                          }
+                          setBadgeSelectionTouched(true)
+                          if (event.target.checked) setSelectedBadges((prev) => [...prev, badge.label])
+                          else setSelectedBadges((prev) => prev.filter((item) => item !== badge.label))
                         }}
                       />
                       {badge.label}
@@ -360,9 +610,6 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                   ))
                 )}
               </div>
-            </div>
-            <div className="rounded-2xl border border-ink/10 bg-paper/80 p-4 text-sm text-ink/60 dark:border-slate-700/60 dark:bg-slate-900/70">
-              Live preview updates instantly. AI paths and career suggestions are always visible.
             </div>
           </div>
         ) : null}
@@ -374,10 +621,15 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
         >
           <PortfolioPreview
             profile={resolvedProfile}
-            paths={resolvedPaths}
-            careers={resolvedCareers}
             badges={visibleBadges}
             repos={visibleRepos}
+            techStack={mergedTechStack}
+            aboutMe={effectiveAbout}
+            contact={{
+              email: contactEmail,
+              linkedin: contactLinkedin,
+              phone: contactPhone,
+            }}
             enableRepoLinks={mode === "public"}
             showBadgeStatus={mode !== "public"}
           />

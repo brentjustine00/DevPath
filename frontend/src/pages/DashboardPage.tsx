@@ -6,32 +6,59 @@ import CareerCard from "../components/CareerCard"
 import PathCard from "../components/PathCard"
 import ProgressBar from "../components/ProgressBar"
 import { badges, careerSuggestions, featuredRepos, practiceDimensions, profile } from "../data/mock"
-import { claimBadges, fetchUser, getStoredAuth, recomputeInsights, setStoredAuth } from "../lib/api"
-import type { UserResponse } from "../types"
+import {
+  claimBadges,
+  fetchOwnerPortfolio,
+  fetchUser,
+  getStoredAuth,
+  recomputeInsights,
+  setStoredAuth,
+  updateSettings,
+} from "../lib/api"
+import NotFoundPage from "./NotFoundPage"
+import type { PortfolioResponse, UserResponse } from "../types"
 
 export default function DashboardPage() {
   const [params] = useSearchParams()
   const usernameParam = params.get("username")
   const tokenParam = params.get("token")
   const stored = getStoredAuth()
-  const username = usernameParam || stored.username
-  const [data, setData] = useState<UserResponse | null>(null)
+  const isAuthenticated = Boolean(stored.token && stored.username)
+  const username = isAuthenticated ? stored.username : ""
+  const usernameMismatch = Boolean(isAuthenticated && usernameParam && usernameParam !== stored.username)
+  const unauthenticatedProfilePeek = Boolean(!isAuthenticated && usernameParam && !tokenParam)
+  const [data, setData] = useState<(UserResponse & { settings?: PortfolioResponse["settings"] }) | null>(null)
   const [recomputeLoading, setRecomputeLoading] = useState(false)
+  const [editingHeaderBadges, setEditingHeaderBadges] = useState(false)
+  const [savingHeaderBadges, setSavingHeaderBadges] = useState(false)
+  const [selectedHeaderBadges, setSelectedHeaderBadges] = useState<string[]>([])
 
   useEffect(() => {
-    if (tokenParam || usernameParam) {
-      setStoredAuth(tokenParam || stored.token, usernameParam || stored.username)
-    }
-  }, [tokenParam, usernameParam, stored.token, stored.username])
-
-  useEffect(() => {
-    if (!username) {
+    // Only trust username from callback when a token is also present.
+    // This prevents manual query-string username changes from hijacking the logged-in session.
+    if (tokenParam && usernameParam) {
+      setStoredAuth(tokenParam, usernameParam)
       return
     }
-    fetchUser(username)
+    if (tokenParam && stored.username) {
+      setStoredAuth(tokenParam, stored.username)
+    }
+  }, [tokenParam, usernameParam, stored.username])
+
+  useEffect(() => {
+    if (!isAuthenticated || !username) {
+      setData(null)
+      return
+    }
+    const currentAuth = getStoredAuth()
+    const load =
+      currentAuth.token && currentAuth.username === username
+        ? fetchOwnerPortfolio(currentAuth.token)
+        : fetchUser(username)
+    load
       .then((payload) => setData(payload))
       .catch(() => setData(null))
-  }, [username])
+  }, [isAuthenticated, username])
 
   const resolvedProfile = data?.profile ?? profile
   const resolvedBadges =
@@ -44,7 +71,19 @@ export default function DashboardPage() {
   const resolvedCareers = data?.career_suggestions ?? careerSuggestions
   const resolvedPaths = data?.practice_dimensions ?? practiceDimensions
   const resolvedRepos = data?.repos ?? featuredRepos
-  const claimedBadges = resolvedBadges.filter((badge) => badge.claimed)
+  const achievedBadges = resolvedBadges.filter((badge) => badge.achieved)
+  const selectableHeaderBadges = achievedBadges
+  const selectableHeaderBadgeLabels = useMemo(
+    () => new Set(selectableHeaderBadges.map((badge) => badge.label)),
+    [selectableHeaderBadges]
+  )
+  const effectiveSelectedHeaderBadges = selectedHeaderBadges.filter((label) =>
+    selectableHeaderBadgeLabels.has(label)
+  )
+  const displayedHeaderBadges =
+    effectiveSelectedHeaderBadges.length > 0
+      ? achievedBadges.filter((badge) => effectiveSelectedHeaderBadges.includes(badge.label))
+      : achievedBadges
   const dashboardBadges = resolvedBadges
     .filter((badge) => badge.achieved)
     .sort((a, b) => {
@@ -61,10 +100,33 @@ export default function DashboardPage() {
       return a.label.localeCompare(b.label)
     })
 
+  useEffect(() => {
+    const fromSettings = data?.settings?.featured_badges
+    if (!Array.isArray(fromSettings)) {
+      setSelectedHeaderBadges([])
+      return
+    }
+    setSelectedHeaderBadges(fromSettings.filter((item): item is string => typeof item === "string"))
+  }, [data?.settings?.featured_badges])
+
+  useEffect(() => {
+    if (selectedHeaderBadges.length === 0) {
+      return
+    }
+    const filtered = selectedHeaderBadges.filter((label) => selectableHeaderBadgeLabels.has(label))
+    if (filtered.length !== selectedHeaderBadges.length) {
+      setSelectedHeaderBadges(filtered)
+    }
+  }, [selectableHeaderBadgeLabels, selectedHeaderBadges])
+
   const xpProgress = useMemo(
     () => (resolvedProfile.xp / resolvedProfile.nextLevelXp) * 100,
     [resolvedProfile]
   )
+
+  if (usernameMismatch || unauthenticatedProfilePeek) {
+    return <NotFoundPage message="This dashboard is private to the signed-in account." />
+  }
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
@@ -103,13 +165,84 @@ export default function DashboardPage() {
               {resolvedProfile.xp} XP earned ·{" "}
               {resolvedProfile.nextLevelXp - resolvedProfile.xp} XP to level up
             </p>
-            {claimedBadges.length === 0 ? (
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-ink/50 dark:text-white/60">
-                No claimed achievements yet. Visit Achievements to claim your first badge.
+                {displayedHeaderBadges.length} achievement{displayedHeaderBadges.length === 1 ? "" : "s"} shown
+              </p>
+              {getStoredAuth().token && getStoredAuth().username === username ? (
+                <button
+                  type="button"
+                  onClick={() => setEditingHeaderBadges((prev) => !prev)}
+                  className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                >
+                  {editingHeaderBadges ? "Done" : "Edit"}
+                </button>
+              ) : null}
+            </div>
+            {editingHeaderBadges ? (
+              <div className="space-y-3 rounded-2xl border border-ink/10 bg-paper/70 p-3 text-sm dark:border-slate-700/60 dark:bg-slate-800/70">
+                <p className="text-xs text-ink/60 dark:text-white/70">
+                  Select badges to show here. If none selected, all achieved badges are shown.
+                </p>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {selectableHeaderBadges.map((badge) => (
+                    <label key={badge.id ?? badge.label} className="flex items-center gap-2 text-ink/80 dark:text-white/80">
+                      <input
+                        type="checkbox"
+                        checked={selectedHeaderBadges.includes(badge.label)}
+                        onChange={(event) => {
+                          if (event.target.checked) {
+                            setSelectedHeaderBadges((prev) => [...prev, badge.label])
+                          } else {
+                            setSelectedHeaderBadges((prev) => prev.filter((item) => item !== badge.label))
+                          }
+                        }}
+                      />
+                      {badge.label}
+                    </label>
+                  ))}
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                    onClick={async () => {
+                      const token = getStoredAuth().token
+                      if (!token) return
+                      setSavingHeaderBadges(true)
+                      try {
+                        const updated = await updateSettings(token, {
+                          featured_badges: effectiveSelectedHeaderBadges,
+                        })
+                        setData(updated)
+                        setEditingHeaderBadges(false)
+                      } finally {
+                        setSavingHeaderBadges(false)
+                      }
+                    }}
+                    disabled={savingHeaderBadges}
+                  >
+                    {savingHeaderBadges ? "Saving..." : "Save badge view"}
+                  </button>
+                  <button
+                    type="button"
+                    className="rounded-full border border-ink/10 px-3 py-1 text-xs text-ink/60 dark:border-white/10 dark:text-white/70"
+                    onClick={() => {
+                      setSelectedHeaderBadges([])
+                    }}
+                  >
+                    Reset (show all)
+                  </button>
+                </div>
+              </div>
+            ) : null}
+            {displayedHeaderBadges.length === 0 ? (
+              <p className="text-xs text-ink/50 dark:text-white/60">
+                No achieved achievements yet. Visit Achievements and claim your next milestone.
               </p>
             ) : (
               <div className="flex flex-wrap gap-3">
-                {claimedBadges.map((badge) => (
+                {displayedHeaderBadges.map((badge) => (
                   <div
                     key={badge.id ?? badge.label}
                     className="flex items-center gap-2 rounded-full border border-ink/10 bg-paper/70 px-3 py-1.5 text-xs dark:border-slate-700/60 dark:bg-slate-800/70"
@@ -165,7 +298,7 @@ export default function DashboardPage() {
                   return
                 }
                 const updated = await claimBadges(token)
-                setData(updated)
+                setData((prev) => ({ ...updated, settings: prev?.settings || {} }))
               }}
             >
               Claim available
@@ -198,7 +331,7 @@ export default function DashboardPage() {
               setRecomputeLoading(true)
               try {
                 const updated = await recomputeInsights(token)
-                setData(updated)
+                setData((prev) => ({ ...updated, settings: prev?.settings || {} }))
               } finally {
                 setRecomputeLoading(false)
               }

@@ -6,14 +6,11 @@ const navLinkClass =
   "rounded-full px-4 py-2 text-sm font-medium transition hover:bg-ink/10 dark:hover:bg-white/10"
 
 export default function Navbar() {
-  const [username, setUsername] = useState("")
+  const storedAuth = getStoredAuth()
+  const username = storedAuth.username
   const [isDark, setIsDark] = useState(false)
 
   useEffect(() => {
-    const stored = getStoredAuth()
-    if (stored.username) {
-      setUsername(stored.username)
-    }
     const savedTheme = localStorage.getItem("devpath_theme")
     const dark = savedTheme === "dark"
     setIsDark(dark)
@@ -38,7 +35,7 @@ export default function Navbar() {
               Landing
             </NavLink>
           ) : null}
-          <NavLink className={navLinkClass} to={username ? `/dashboard?username=${username}` : "/dashboard"}>
+          <NavLink className={navLinkClass} to="/dashboard">
             Dashboard
           </NavLink>
           <NavLink className={navLinkClass} to="/learning-paths">
@@ -50,7 +47,7 @@ export default function Navbar() {
           <NavLink className={navLinkClass} to="/achievements">
             Achievements
           </NavLink>
-          <NavLink className={navLinkClass} to={username ? "/my-portfolio" : "/portfolio/nova-dev"}>
+          <NavLink className={navLinkClass} to="/my-portfolio">
             Portfolio
           </NavLink>
         </div>
