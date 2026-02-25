@@ -1,6 +1,17 @@
 import type { Badge, RepoSummary, UserProfile } from "../types"
 import BadgeCard from "./BadgeCard"
 
+type JobExperienceItem = {
+  year?: string
+  title: string
+  description?: string
+}
+
+type EducationHistoryItem = {
+  year?: string
+  title: string
+}
+
 type ContactInfo = {
   email?: string
   linkedin?: string
@@ -13,7 +24,10 @@ type PortfolioPreviewProps = {
   repos: RepoSummary[]
   techStack: string[]
   aboutMe: string
+  educationHistory?: EducationHistoryItem[]
+  jobExperience?: JobExperienceItem[]
   contact: ContactInfo
+  profileImage?: string
   enableRepoLinks?: boolean
   showBadgeStatus?: boolean
 }
@@ -31,17 +45,21 @@ export default function PortfolioPreview({
   repos,
   techStack,
   aboutMe,
+  educationHistory = [],
+  jobExperience = [],
   contact,
+  profileImage,
   enableRepoLinks = false,
   showBadgeStatus = true,
 }: PortfolioPreviewProps) {
   const visibleBadges = badges.filter((badge) => badge.achieved || badge.claimed)
+  const resolvedProfileImage = profileImage?.trim() ? profileImage.trim() : profile.avatarUrl
 
   return (
     <div className="rounded-3xl border border-ink/10 bg-white/70 p-6 shadow-soft backdrop-blur dark:border-slate-700/60 dark:bg-slate-900/70">
       <div className="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
         <div className="flex items-center gap-4">
-          <img src={profile.avatarUrl} alt={profile.displayName} className="h-16 w-16 rounded-2xl" />
+          <img src={resolvedProfileImage} alt={profile.displayName} className="h-16 w-16 rounded-2xl object-cover" />
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-ink/50">Portfolio</p>
             <h3 className="text-2xl font-semibold">{profile.displayName}</h3>
@@ -81,6 +99,41 @@ export default function PortfolioPreview({
           )}
         </div>
       </div>
+
+      {educationHistory.length > 0 ? (
+        <div className="mt-6 rounded-2xl border border-ink/10 bg-paper/60 p-4 dark:border-slate-700/60 dark:bg-slate-800/70">
+          <h4 className="text-lg font-semibold">Education History</h4>
+          <ul className="mt-3 list-disc space-y-1 pl-5 text-sm text-ink/70 dark:text-white/80">
+            {educationHistory.map((item) => (
+              <li key={`${item.year || ""}-${item.title}`}>
+                {item.year ? `${item.year} - ` : ""}
+                {item.title}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {jobExperience.length > 0 ? (
+        <div className="mt-6 rounded-2xl border border-ink/10 bg-paper/60 p-4 dark:border-slate-700/60 dark:bg-slate-800/70">
+          <h4 className="text-lg font-semibold">Job Experience</h4>
+          <ul className="mt-3 list-disc space-y-2 pl-5 text-sm text-ink/70 dark:text-white/80">
+            {jobExperience.map((item) => (
+              <li key={`${item.year || ""}-${item.title}-${item.description || ""}`}>
+                <p className="font-semibold">
+                  {item.year ? `${item.year} - ` : ""}
+                  {item.title}
+                </p>
+                {item.description ? (
+                  <p className="whitespace-pre-line text-xs leading-relaxed text-ink/60 dark:text-white/70">
+                    {item.description}
+                  </p>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       <div className="mt-6 grid gap-6 lg:grid-cols-3">
         <div className="space-y-3 lg:col-span-2">

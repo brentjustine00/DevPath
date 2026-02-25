@@ -26,6 +26,52 @@ function parseString(value: unknown) {
   return typeof value === "string" ? value : ""
 }
 
+function parseEducationHistory(value: unknown): Array<{ year?: string; title: string }> {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        const text = item.trim()
+        if (!text) return null
+        return { title: text }
+      }
+      if (item && typeof item === "object") {
+        const obj = item as Record<string, unknown>
+        const year = typeof obj.year === "string" ? obj.year.trim() : ""
+        const title = typeof obj.title === "string" ? obj.title.trim() : ""
+        if (!title) return null
+        return year ? { year, title } : { title }
+      }
+      return null
+    })
+    .filter((item): item is { year?: string; title: string } => Boolean(item?.title))
+}
+
+function parseJobExperience(value: unknown): Array<{ year?: string; title: string; description?: string }> {
+  if (!Array.isArray(value)) return []
+  return value
+    .map((item) => {
+      if (typeof item === "string") {
+        const text = item.trim()
+        if (!text) return null
+        return { title: text }
+      }
+      if (item && typeof item === "object") {
+        const obj = item as Record<string, unknown>
+        const year = typeof obj.year === "string" ? obj.year.trim() : ""
+        const title = typeof obj.title === "string" ? obj.title.trim() : ""
+        const description = typeof obj.description === "string" ? obj.description.trim() : ""
+        if (!title) return null
+        const result: { year?: string; title: string; description?: string } = { title }
+        if (year) result.year = year
+        if (description) result.description = description
+        return result
+      }
+      return null
+    })
+    .filter((item): item is { year?: string; title: string; description?: string } => Boolean(item?.title))
+}
+
 function deriveGeneratedTechStack(repos: RepoSummary[]) {
   const ordered = new Map<string, string>()
 
@@ -95,6 +141,9 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
   const [manualTechStackInput, setManualTechStackInput] = useState("")
   const [generatedAbout, setGeneratedAbout] = useState("")
   const [manualAbout, setManualAbout] = useState("")
+  const [customProfileImage, setCustomProfileImage] = useState("")
+  const [educationHistoryEntries, setEducationHistoryEntries] = useState<Array<{ year: string; title: string }>>([])
+  const [jobExperienceEntries, setJobExperienceEntries] = useState<Array<{ year: string; title: string; description: string }>>([])
   const [contactEmail, setContactEmail] = useState("")
   const [contactLinkedin, setContactLinkedin] = useState("")
   const [contactPhone, setContactPhone] = useState("")
@@ -198,6 +247,17 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
         )
         setGeneratedAbout(parseString(social.about_generated) || computedAbout)
         setManualAbout(parseString(social.about_manual) || parseString(payload.settings?.bio))
+        setCustomProfileImage(parseString(social.profile_image))
+        const parsedEducation = parseEducationHistory(social.education_history)
+        setEducationHistoryEntries(parsedEducation.map((item) => ({ year: item.year || "", title: item.title })))
+        const parsedJobs = parseJobExperience(social.job_experience)
+        setJobExperienceEntries(
+          parsedJobs.map((item) => ({
+            year: item.year || "",
+            title: item.title,
+            description: item.description || "",
+          }))
+        )
         setContactEmail(parseString(social.email))
         setContactLinkedin(parseString(social.linkedin))
         setContactPhone(parseString(social.phone))
@@ -281,6 +341,24 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
   }, [generatedTechStack, manualTechStack])
 
   const effectiveAbout = manualAbout.trim() || generatedAbout.trim() || resolvedProfile.bio
+  const educationHistory = useMemo(
+    () =>
+      educationHistoryEntries
+        .map((item) => ({ year: item.year.trim(), title: item.title.trim() }))
+        .filter((item) => item.title.length > 0),
+    [educationHistoryEntries]
+  )
+  const jobExperience = useMemo(
+    () =>
+      jobExperienceEntries
+        .map((item) => ({
+          year: item.year.trim(),
+          title: item.title.trim(),
+          description: item.description.trim(),
+        }))
+        .filter((item) => item.title.length > 0),
+    [jobExperienceEntries]
+  )
 
   const effectivePreviewDark = isOwner
     ? previewDark
@@ -354,6 +432,9 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                       featured_repos: selectedRepos,
                       featured_badges: effectiveSelectedBadges,
                       social_links: {
+                        profile_image: customProfileImage,
+                        education_history: educationHistory,
+                        job_experience: jobExperience,
                         email: contactEmail,
                         linkedin: contactLinkedin,
                         phone: contactPhone,
@@ -519,6 +600,161 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
             </div>
 
             <div className="space-y-3">
+              <label className="text-sm font-medium dark:text-white/80">Profile picture (1:1)</label>
+              <input
+                type="file"
+                accept="image/*"
+                disabled={!canCustomize}
+                onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (!file) return
+                  const reader = new FileReader()
+                  reader.onload = () => {
+                    const result = typeof reader.result === "string" ? reader.result : ""
+                    setCustomProfileImage(result)
+                  }
+                  reader.readAsDataURL(file)
+                }}
+                className="w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none file:mr-3 file:rounded-full file:border-0 file:bg-ink file:px-3 file:py-1 file:text-xs file:font-semibold file:text-paper dark:border-white/20 dark:bg-slate-900/70 dark:file:bg-slate-100 dark:file:text-slate-900"
+              />
+              {customProfileImage ? (
+                <div className="flex items-center gap-3">
+                  <img src={customProfileImage} alt="Custom profile" className="h-12 w-12 rounded-xl object-cover" />
+                  <button
+                    type="button"
+                    disabled={!canCustomize}
+                    onClick={() => setCustomProfileImage("")}
+                    className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                  >
+                    Remove uploaded image
+                  </button>
+                </div>
+              ) : null}
+              <p className="text-xs text-ink/50 dark:text-white/60">
+                Upload a 1:1 image. If none is uploaded, GitHub profile image is used automatically.
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-medium dark:text-white/80">Education history</label>
+              <div className="space-y-2">
+                {educationHistoryEntries.map((entry, index) => (
+                  <div key={`edu-${index}`} className="grid gap-2 md:grid-cols-[110px_1fr_auto]">
+                    <input
+                      type="text"
+                      value={entry.year}
+                      disabled={!canCustomize}
+                      onChange={(event) =>
+                        setEducationHistoryEntries((prev) =>
+                          prev.map((item, i) => (i === index ? { ...item, year: event.target.value } : item))
+                        )
+                      }
+                      placeholder="Year"
+                      className="rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                    />
+                    <input
+                      type="text"
+                      value={entry.title}
+                      disabled={!canCustomize}
+                      onChange={(event) =>
+                        setEducationHistoryEntries((prev) =>
+                          prev.map((item, i) => (i === index ? { ...item, title: event.target.value } : item))
+                        )
+                      }
+                      placeholder="School / Degree"
+                      className="rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                    />
+                    <button
+                      type="button"
+                      disabled={!canCustomize}
+                      onClick={() =>
+                        setEducationHistoryEntries((prev) => prev.filter((_, i) => i !== index))
+                      }
+                      className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={!canCustomize}
+                  onClick={() =>
+                    setEducationHistoryEntries((prev) => [...prev, { year: "", title: "" }])
+                  }
+                  className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                >
+                  Add education
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <label className="text-sm font-medium dark:text-white/80">Job experience</label>
+              <div className="space-y-2">
+                {jobExperienceEntries.map((entry, index) => (
+                  <div key={`job-${index}`} className="space-y-2 rounded-2xl border border-ink/10 bg-paper/60 p-3 dark:border-slate-700/60 dark:bg-slate-800/60">
+                    <div className="grid gap-2 md:grid-cols-[110px_1fr_auto]">
+                      <input
+                        type="text"
+                        value={entry.year}
+                        disabled={!canCustomize}
+                        onChange={(event) =>
+                          setJobExperienceEntries((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, year: event.target.value } : item))
+                          )
+                        }
+                        placeholder="Year"
+                        className="rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                      />
+                      <input
+                        type="text"
+                        value={entry.title}
+                        disabled={!canCustomize}
+                        onChange={(event) =>
+                          setJobExperienceEntries((prev) =>
+                            prev.map((item, i) => (i === index ? { ...item, title: event.target.value } : item))
+                          )
+                        }
+                        placeholder="Job title"
+                        className="rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                      />
+                      <button
+                        type="button"
+                        disabled={!canCustomize}
+                        onClick={() => setJobExperienceEntries((prev) => prev.filter((_, i) => i !== index))}
+                        className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <textarea
+                      value={entry.description}
+                      disabled={!canCustomize}
+                      onChange={(event) =>
+                        setJobExperienceEntries((prev) =>
+                          prev.map((item, i) => (i === index ? { ...item, description: event.target.value } : item))
+                        )
+                      }
+                      placeholder="Job description"
+                      className="h-20 w-full rounded-2xl border border-ink/20 bg-paper/80 px-3 py-2 text-sm outline-none dark:border-white/20 dark:bg-slate-900/70"
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  disabled={!canCustomize}
+                  onClick={() =>
+                    setJobExperienceEntries((prev) => [...prev, { year: "", title: "", description: "" }])
+                  }
+                  className="rounded-full border border-ink/20 px-3 py-1 text-xs font-semibold text-ink/70 dark:border-white/20 dark:text-white/80"
+                >
+                  Add job
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-3">
               <label className="text-sm font-medium dark:text-white/80">Contact</label>
               <div className="grid gap-2">
                 <input
@@ -609,6 +845,9 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
             repos={visibleRepos}
             techStack={mergedTechStack}
             aboutMe={effectiveAbout}
+            educationHistory={educationHistory}
+            jobExperience={jobExperience}
+            profileImage={customProfileImage}
             contact={{
               email: contactEmail,
               linkedin: contactLinkedin,

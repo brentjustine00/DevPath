@@ -13,6 +13,7 @@ class User(Base):
     avatar_url = Column(Text, nullable=False)
     display_name = Column(String(120), nullable=True)
     bio = Column(Text, nullable=True)
+    github_token = Column(Text, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     repos = relationship("Repo", back_populates="user", cascade="all, delete-orphan")

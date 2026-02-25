@@ -107,6 +107,26 @@ export default function DashboardPage() {
       return a.label.localeCompare(b.label)
     })
 
+  const unclaimedRewardXp = useMemo(
+    () =>
+      resolvedBadges
+        .filter((badge) => badge.achieved && !badge.claimed)
+        .reduce(
+          (sum, badge) =>
+            sum +
+            (typeof badge.reward_xp === "number"
+              ? badge.reward_xp
+              : badge.rarity === "epic"
+                ? 200
+                : badge.rarity === "rare"
+                  ? 100
+                  : 50),
+          0
+        ),
+    [resolvedBadges]
+  )
+  const claimedXpOnly = Math.max(0, resolvedProfile.xp - unclaimedRewardXp)
+
   useEffect(() => {
     const fromSettings = data?.settings?.featured_badges
     if (!Array.isArray(fromSettings)) {
@@ -127,8 +147,8 @@ export default function DashboardPage() {
   }, [selectableHeaderBadgeLabels, selectedHeaderBadges])
 
   const xpProgress = useMemo(
-    () => (resolvedProfile.xp / resolvedProfile.nextLevelXp) * 100,
-    [resolvedProfile]
+    () => (claimedXpOnly / resolvedProfile.nextLevelXp) * 100,
+    [claimedXpOnly, resolvedProfile.nextLevelXp]
   )
 
   if (usernameMismatch || unauthenticatedProfilePeek) {
@@ -174,8 +194,8 @@ export default function DashboardPage() {
           <div className="mt-6 space-y-4">
             <ProgressBar value={xpProgress} label="XP to next level" max={100} />
             <p className="text-sm text-ink/60 dark:text-white/70">
-              {resolvedProfile.xp} XP earned ·{" "}
-              {resolvedProfile.nextLevelXp - resolvedProfile.xp} XP to level up
+              {claimedXpOnly} XP earned ·{" "}
+              {Math.max(0, resolvedProfile.nextLevelXp - claimedXpOnly)} XP to level up
             </p>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <p className="text-xs text-ink/50 dark:text-white/60">

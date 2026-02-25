@@ -12,7 +12,15 @@ from app.schemas import (
     RegistrationIn,
     LeaderboardEntryOut,
 )
-from app.services.github import fetch_public_repo_languages, fetch_public_repos, summarize_repo
+from app.services.github import (
+    fetch_commit_streak_days,
+    fetch_repos,
+    fetch_repo_languages,
+    fetch_public_repo_languages,
+    fetch_public_repos,
+    fetch_repo_commit_count,
+    summarize_repo,
+)
 from app.services.groq import infer_practice_and_careers
 from app.services.gamification import badge_reward_xp, badge_visuals, compute_xp_and_badges
 
@@ -130,6 +138,7 @@ def get_user(username: str, db: Session = Depends(get_db)):
     total_xp = gamification.xp + bonus_xp
     level = max(1, total_xp // 500 + 1)
     next_level_xp = level * 500
+    streak_days = fetch_commit_streak_days(user.username, token=user.github_token)
 
     return {
         "profile": {
@@ -140,7 +149,7 @@ def get_user(username: str, db: Session = Depends(get_db)):
             "level": level,
             "xp": total_xp,
             "next_level_xp": next_level_xp,
-            "streak_days": gamification.streak_days,
+            "streak_days": streak_days,
         },
         "practice_dimensions": [
             {"label": item.label, "confidence": item.confidence, "evidence": item.evidence}
@@ -230,11 +239,21 @@ def recompute_insights(
     current_user: User = Depends(get_current_user),
 ):
     try:
-        repos_raw = fetch_public_repos(current_user.username)
+        if current_user.github_token:
+            repos_raw = fetch_repos(current_user.github_token)
+        else:
+            repos_raw = fetch_public_repos(current_user.username)
         summaries = []
         for repo in repos_raw:
-            languages = fetch_public_repo_languages(repo.get("full_name", ""))
-            summaries.append(summarize_repo(repo, languages))
+            full_name = repo.get("full_name", "")
+            if current_user.github_token:
+                languages = fetch_repo_languages(current_user.github_token, full_name)
+            else:
+                languages = fetch_public_repo_languages(full_name)
+            commit_count = fetch_repo_commit_count(
+                full_name, current_user.username, token=current_user.github_token
+            )
+            summaries.append(summarize_repo(repo, languages, commit_count=commit_count))
         db.query(Repo).filter(Repo.user_id == current_user.id).delete()
         for repo in summaries:
             db.add(Repo(user_id=current_user.id, **repo))

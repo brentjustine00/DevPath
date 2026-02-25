@@ -6,7 +6,14 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.db import get_db
 from app.models import Badge, CareerSuggestion, PracticeDimension, Repo, User, PortfolioSettings
-from app.services.github import exchange_code_for_token, fetch_github_user, fetch_repos, fetch_repo_languages, summarize_repo
+from app.services.github import (
+    exchange_code_for_token,
+    fetch_github_user,
+    fetch_repo_commit_count,
+    fetch_repos,
+    fetch_repo_languages,
+    summarize_repo,
+)
 from app.services.gamification import compute_xp_and_badges
 from app.services.groq import infer_practice_and_careers
 
@@ -53,17 +60,22 @@ def github_callback(code: str = Query(...), db: Session = Depends(get_db)):
             avatar_url=avatar_url,
             display_name=display_name,
             bio=bio,
+            github_token=token,
         )
         db.add(user)
         db.flush()
         db.add(PortfolioSettings(user_id=user.id))
         is_new = True
+    else:
+        user.github_token = token
 
     repos_raw = fetch_repos(token)
     summaries = []
     for repo in repos_raw:
+        full_name = repo.get("full_name", "")
         languages = fetch_repo_languages(token, repo.get("full_name", ""))
-        summaries.append(summarize_repo(repo, languages))
+        commit_count = fetch_repo_commit_count(full_name, username, token=token)
+        summaries.append(summarize_repo(repo, languages, commit_count=commit_count))
 
     db.query(Repo).filter(Repo.user_id == user.id).delete()
     for repo in summaries:

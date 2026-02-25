@@ -40,7 +40,7 @@ export default function LearningPathsPage() {
         <div>
           <p className="text-xs uppercase tracking-[0.3em] text-ink/50 dark:text-white/60">Learning Paths</p>
           <h2 className="text-3xl font-semibold dark:text-white">
-            Practice dimensions with explainable AI
+            Practice dimensions
           </h2>
         </div>
         <button
