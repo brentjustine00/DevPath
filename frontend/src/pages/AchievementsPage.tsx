@@ -9,6 +9,9 @@ export default function AchievementsPage() {
   const [toast, setToast] = useState("")
 
   const getBadgeXp = (badge: Badge) => {
+    if (typeof badge.reward_xp === "number") {
+      return badge.reward_xp
+    }
     if (badge.rarity === "epic") return 200
     if (badge.rarity === "rare") return 100
     return 50
@@ -101,7 +104,15 @@ export default function AchievementsPage() {
               className="rounded-2xl border border-ink/10 bg-paper/80 p-4 shadow-soft dark:border-slate-700/60 dark:bg-slate-900/70"
             >
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <h4 className="text-lg font-semibold dark:text-white">{badge.label}</h4>
+                <div className="flex items-center gap-2">
+                  <span className="text-xl" aria-hidden>
+                    {badge.medal_icon || "🏅"}
+                  </span>
+                  <h4 className="text-lg font-semibold dark:text-white">
+                    {badge.icon ? `${badge.icon} ` : ""}
+                    {badge.label}
+                  </h4>
+                </div>
                 <div className="flex items-center gap-2">
                   {badge.achieved ? (
                     <span className="rounded-full bg-neon/30 px-3 py-1.5 text-xs font-semibold text-ink">

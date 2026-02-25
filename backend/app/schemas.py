@@ -20,6 +20,13 @@ class BadgeOut(BaseModel):
     rarity: str
     achieved: bool
     claimed: bool
+    reward_xp: int | None = None
+    medal_tier: str | None = None
+    medal_icon: str | None = None
+    category: str | None = None
+    category_icon: str | None = None
+    icon: str | None = None
+    target: int | None = None
 
 
 class RepoOut(BaseModel):

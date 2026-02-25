@@ -20,6 +20,13 @@ export type Badge = {
   rarity: "common" | "rare" | "epic"
   achieved?: boolean
   claimed?: boolean
+  reward_xp?: number
+  medal_tier?: "bronze" | "silver" | "gold" | string
+  medal_icon?: string
+  category?: string
+  category_icon?: string
+  icon?: string
+  target?: number
 }
 
 export type RepoSummary = {

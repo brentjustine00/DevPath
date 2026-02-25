@@ -87,7 +87,6 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
   const [showRepos, setShowRepos] = useState(true)
   const [selectedRepos, setSelectedRepos] = useState<string[]>([])
   const [selectedBadges, setSelectedBadges] = useState<string[]>([])
-  const [badgeSelectionTouched, setBadgeSelectionTouched] = useState(false)
   const [data, setData] = useState<PortfolioResponse | null>(null)
   const [saving, setSaving] = useState(false)
   const [shareCopied, setShareCopied] = useState(false)
@@ -183,7 +182,6 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
         if (Array.isArray(payload.settings?.featured_badges)) {
           setSelectedBadges(payload.settings.featured_badges)
         }
-        setBadgeSelectionTouched(false)
 
         const social = (payload.settings?.social_links || {}) as Record<string, unknown>
         const computedTech = deriveGeneratedTechStack(payload.repos || [])
@@ -252,19 +250,6 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
       setSelectedBadges(filtered)
     }
   }, [selectableBadgeLabels, selectedBadges])
-
-  useEffect(() => {
-    if (!isOwner || badgeSelectionTouched || selectedBadges.length === 0) {
-      return
-    }
-    const hasNewAchievedBadges = selectableBadges.some(
-      (badge) => !selectedBadges.includes(badge.label)
-    )
-    if (hasNewAchievedBadges) {
-      // Auto-sync legacy saved selections by showing all achieved badges.
-      setSelectedBadges([])
-    }
-  }, [isOwner, badgeSelectionTouched, selectedBadges, selectableBadges])
 
   const repoSelectionActive = selectedRepos.length > 0
   const badgeSelectionActive = effectiveSelectedBadges.length > 0
@@ -600,7 +585,6 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
                         checked={selectedBadges.includes(badge.label)}
                         disabled={!canCustomize}
                         onChange={(event) => {
-                          setBadgeSelectionTouched(true)
                           if (event.target.checked) setSelectedBadges((prev) => [...prev, badge.label])
                           else setSelectedBadges((prev) => prev.filter((item) => item !== badge.label))
                         }}
@@ -631,7 +615,7 @@ export default function PublicPortfolioPage({ mode = "public" }: PublicPortfolio
               phone: contactPhone,
             }}
             enableRepoLinks={mode === "public"}
-            showBadgeStatus={mode !== "public"}
+            showBadgeStatus={false}
           />
         </div>
       </div>

@@ -137,7 +137,14 @@ export default function PortfolioPreview({
               </div>
             ) : (
               visibleBadges.map((badge) => (
-                <BadgeCard key={badge.label} badge={badge} showStatus={showBadgeStatus} />
+                <BadgeCard
+                  key={badge.label}
+                  badge={badge}
+                  showStatus={showBadgeStatus}
+                  showRarity={false}
+                  showReward={false}
+                  showCriteria={false}
+                />
               ))
             )}
           </div>

@@ -74,6 +74,13 @@ function normalizeResponse(data: {
     rarity: "common" | "rare" | "epic"
     achieved?: boolean
     claimed?: boolean
+    reward_xp?: number
+    medal_tier?: string
+    medal_icon?: string
+    category?: string
+    category_icon?: string
+    icon?: string
+    target?: number
   }>
   repos: Array<{
     name: string

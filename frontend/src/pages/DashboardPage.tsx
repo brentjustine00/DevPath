@@ -29,6 +29,7 @@ export default function DashboardPage() {
   const unauthenticatedProfilePeek = Boolean(!isAuthenticated && usernameParam && !tokenParam)
   const [data, setData] = useState<(UserResponse & { settings?: PortfolioResponse["settings"] }) | null>(null)
   const [recomputeLoading, setRecomputeLoading] = useState(false)
+  const [toast, setToast] = useState("")
   const [editingHeaderBadges, setEditingHeaderBadges] = useState(false)
   const [savingHeaderBadges, setSavingHeaderBadges] = useState(false)
   const [selectedHeaderBadges, setSelectedHeaderBadges] = useState<string[]>([])
@@ -59,6 +60,12 @@ export default function DashboardPage() {
       .then((payload) => setData(payload))
       .catch(() => setData(null))
   }, [isAuthenticated, username])
+
+  useEffect(() => {
+    if (!toast) return
+    const timer = window.setTimeout(() => setToast(""), 2800)
+    return () => window.clearTimeout(timer)
+  }, [toast])
 
   const resolvedProfile = data?.profile ?? profile
   const resolvedBadges =
@@ -130,6 +137,11 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-12">
+      {toast ? (
+        <div className="fixed right-6 top-24 z-50 rounded-xl border border-neon/40 bg-paper px-4 py-3 text-sm font-semibold text-ink shadow-soft dark:bg-slate-900 dark:text-white">
+          {toast}
+        </div>
+      ) : null}
       <div className="grid gap-8 lg:grid-cols-[1.2fr_0.8fr]">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -248,7 +260,7 @@ export default function DashboardPage() {
                     className="flex items-center gap-2 rounded-full border border-ink/10 bg-paper/70 px-3 py-1.5 text-xs dark:border-slate-700/60 dark:bg-slate-800/70"
                   >
                     <span className="flex h-7 w-7 items-center justify-center rounded-full bg-ink text-paper dark:bg-slate-100 dark:text-slate-900">
-                      {badge.label.charAt(0)}
+                      {badge.medal_icon || badge.label.charAt(0)}
                     </span>
                     <span className="text-ink/80 dark:text-white/80">{badge.label}</span>
                   </div>
@@ -297,8 +309,31 @@ export default function DashboardPage() {
                 if (!token) {
                   return
                 }
+                const beforeClaimedSet = new Set(
+                  resolvedBadges.filter((badge) => badge.claimed).map((badge) => badge.label)
+                )
                 const updated = await claimBadges(token)
                 setData((prev) => ({ ...updated, settings: prev?.settings || {} }))
+                const newlyClaimed = updated.badges.filter(
+                  (badge) => badge.claimed && !beforeClaimedSet.has(badge.label)
+                )
+                if (newlyClaimed.length > 0) {
+                  const xpGain = newlyClaimed.reduce(
+                    (sum, badge) =>
+                      sum +
+                      (typeof badge.reward_xp === "number"
+                        ? badge.reward_xp
+                        : badge.rarity === "epic"
+                          ? 200
+                          : badge.rarity === "rare"
+                            ? 100
+                            : 50),
+                    0
+                  )
+                  setToast(
+                    `Celebration: Claimed ${newlyClaimed.length} achievement${newlyClaimed.length > 1 ? "s" : ""}! +${xpGain} XP`
+                  )
+                }
               }}
             >
               Claim available

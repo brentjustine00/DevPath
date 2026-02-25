@@ -51,6 +51,20 @@ def fetch_repo_languages(token: str, full_name: str) -> list[str]:
     return list(payload.keys())
 
 
+def fetch_public_repo_languages(full_name: str) -> list[str]:
+    response = requests.get(
+        f"{GITHUB_API}/repos/{full_name}/languages",
+        headers={"Accept": "application/vnd.github+json"},
+        timeout=15,
+    )
+    if response.status_code != 200:
+        return []
+    payload = response.json()
+    if not isinstance(payload, dict):
+        return []
+    return list(payload.keys())
+
+
 def fetch_repos(token: str) -> list[dict]:
     repos = []
     page = 1
@@ -59,6 +73,25 @@ def fetch_repos(token: str) -> list[dict]:
             f"{GITHUB_API}/user/repos",
             headers={"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"},
             params={"per_page": 100, "page": page, "sort": "updated"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        page_data = response.json()
+        repos.extend(page_data)
+        if len(page_data) < 100:
+            break
+        page += 1
+    return repos
+
+
+def fetch_public_repos(username: str) -> list[dict]:
+    repos = []
+    page = 1
+    while True:
+        response = requests.get(
+            f"{GITHUB_API}/users/{username}/repos",
+            headers={"Accept": "application/vnd.github+json"},
+            params={"per_page": 100, "page": page, "sort": "updated", "type": "owner"},
             timeout=20,
         )
         response.raise_for_status()

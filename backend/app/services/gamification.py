@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
+import re
 
 IGNORED_LANGUAGE_BADGE_SET = {
     "html",
@@ -27,6 +28,25 @@ LANGUAGE_ALIAS_MAP = {
     "plpgsql": "sql",
 }
 
+RARITY_REWARD_XP = {
+    "common": 50,
+    "rare": 100,
+    "epic": 200,
+}
+
+CATEGORY_ICON_MAP = {
+    "Repo Builder": "📦",
+    "Language Explorer": "🧭",
+    "Commit Momentum": "⚡",
+    "Star Magnet": "⭐",
+}
+
+MEDAL_BY_RARITY = {
+    "common": ("bronze", "🥉"),
+    "rare": ("silver", "🥈"),
+    "epic": ("gold", "🥇"),
+}
+
 
 @dataclass
 class GamificationResult:
@@ -35,6 +55,26 @@ class GamificationResult:
     next_level_xp: int
     streak_days: int
     badges: list[dict]
+
+
+def badge_reward_xp(rarity: str) -> int:
+    return RARITY_REWARD_XP.get(str(rarity).lower(), 50)
+
+
+def badge_visuals(label: str, rarity: str) -> dict:
+    match = re.match(r"^(Repo Builder|Language Explorer|Commit Momentum|Star Magnet)\s+(\d+)$", label or "")
+    category = match.group(1) if match else "Achievement"
+    target = int(match.group(2)) if match else 0
+    category_icon = CATEGORY_ICON_MAP.get(category, "🏅")
+    medal_tier, medal_icon = MEDAL_BY_RARITY.get(str(rarity).lower(), ("bronze", "🥉"))
+    return {
+        "category": category,
+        "target": target,
+        "medal_tier": medal_tier,
+        "medal_icon": medal_icon,
+        "category_icon": category_icon,
+        "icon": f"{category_icon}{target}" if target else category_icon,
+    }
 
 
 def compute_xp_and_badges(repos: list[dict]) -> GamificationResult:

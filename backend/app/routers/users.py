@@ -12,11 +12,65 @@ from app.schemas import (
     RegistrationIn,
     LeaderboardEntryOut,
 )
+from app.services.github import fetch_public_repo_languages, fetch_public_repos, summarize_repo
 from app.services.groq import infer_practice_and_careers
-from app.services.gamification import compute_xp_and_badges
+from app.services.gamification import badge_reward_xp, badge_visuals, compute_xp_and_badges
 
 
 router = APIRouter(prefix="/api", tags=["users"])
+
+
+def _badge_bonus_xp(badges: list[Badge]) -> int:
+    return sum(badge_reward_xp(item.rarity) for item in badges if item.claimed)
+
+
+def _badge_payload(item: Badge) -> dict:
+    visuals = badge_visuals(item.label, item.rarity)
+    reward_xp = badge_reward_xp(item.rarity)
+    return {
+        "label": item.label,
+        "description": item.description,
+        "criteria": item.criteria,
+        "rarity": item.rarity,
+        "achieved": item.achieved,
+        "claimed": item.claimed,
+        "reward_xp": reward_xp,
+        **visuals,
+    }
+
+
+def _sync_badges(db: Session, user_id: int, generated_badges: list[dict]) -> None:
+    existing_badges = {
+        badge.label: badge
+        for badge in db.query(Badge).filter(Badge.user_id == user_id).all()
+    }
+    seen_labels: set[str] = set()
+    for badge in generated_badges:
+        seen_labels.add(badge["label"])
+        existing = existing_badges.get(badge["label"])
+        if existing:
+            existing.description = badge["description"]
+            existing.criteria = badge["criteria"]
+            existing.rarity = badge["rarity"]
+            existing.achieved = badge["achieved"]
+            if badge["achieved"] is False:
+                existing.claimed = False
+        else:
+            db.add(
+                Badge(
+                    user_id=user_id,
+                    label=badge["label"],
+                    description=badge["description"],
+                    criteria=badge["criteria"],
+                    rarity=badge["rarity"],
+                    achieved=badge["achieved"],
+                    claimed=badge.get("claimed", False),
+                )
+            )
+
+    for label, stale in existing_badges.items():
+        if label not in seen_labels:
+            db.delete(stale)
 
 
 @router.get("/user/{username}", response_model=UserResponse)
@@ -71,15 +125,21 @@ def get_user(username: str, db: Session = Depends(get_db)):
         practice_rows = db.query(PracticeDimension).filter(PracticeDimension.user_id == user.id).all()
         career_rows = db.query(CareerSuggestion).filter(CareerSuggestion.user_id == user.id).all()
 
+    badge_rows = db.query(Badge).filter(Badge.user_id == user.id).all()
+    bonus_xp = _badge_bonus_xp(badge_rows)
+    total_xp = gamification.xp + bonus_xp
+    level = max(1, total_xp // 500 + 1)
+    next_level_xp = level * 500
+
     return {
         "profile": {
             "username": user.username,
             "display_name": user.display_name,
             "bio": user.bio,
             "avatar_url": user.avatar_url,
-            "level": gamification.level,
-            "xp": gamification.xp,
-            "next_level_xp": gamification.next_level_xp,
+            "level": level,
+            "xp": total_xp,
+            "next_level_xp": next_level_xp,
             "streak_days": gamification.streak_days,
         },
         "practice_dimensions": [
@@ -90,17 +150,7 @@ def get_user(username: str, db: Session = Depends(get_db)):
             {"title": item.title, "confidence": item.confidence, "reasoning": item.reasoning}
             for item in career_rows
         ],
-        "badges": [
-            {
-                "label": item.label,
-                "description": item.description,
-                "criteria": item.criteria,
-                "rarity": item.rarity,
-                "achieved": item.achieved,
-                "claimed": item.claimed,
-            }
-            for item in db.query(Badge).filter(Badge.user_id == user.id).all()
-        ],
+        "badges": [_badge_payload(item) for item in badge_rows],
         "repos": [
             {
                 "name": repo.name,
@@ -179,20 +229,51 @@ def recompute_insights(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    repos = db.query(Repo).filter(Repo.user_id == current_user.id).all()
-    summaries = [
-        {
-            "name": repo.name,
-            "description": repo.description,
-            "language": repo.language,
-            "languages": repo.languages,
-            "stars": repo.stars,
-            "topics": repo.topics,
-            "last_push": repo.last_push,
-            "commit_count": repo.commit_count,
-        }
-        for repo in repos
-    ]
+    try:
+        repos_raw = fetch_public_repos(current_user.username)
+        summaries = []
+        for repo in repos_raw:
+            languages = fetch_public_repo_languages(repo.get("full_name", ""))
+            summaries.append(summarize_repo(repo, languages))
+        db.query(Repo).filter(Repo.user_id == current_user.id).delete()
+        for repo in summaries:
+            db.add(Repo(user_id=current_user.id, **repo))
+        db.flush()
+    except Exception:
+        # Fallback to last synced repos when GitHub is temporarily unavailable.
+        repos = db.query(Repo).filter(Repo.user_id == current_user.id).all()
+        summaries = [
+            {
+                "name": repo.name,
+                "description": repo.description,
+                "language": repo.language,
+                "languages": repo.languages,
+                "stars": repo.stars,
+                "topics": repo.topics,
+                "last_push": repo.last_push,
+                "commit_count": repo.commit_count,
+            }
+            for repo in repos
+        ]
+
+    if "summaries" not in locals():
+        summaries = []
+
+    if not summaries:
+        repos = db.query(Repo).filter(Repo.user_id == current_user.id).all()
+        summaries = [
+            {
+                "name": repo.name,
+                "description": repo.description,
+                "language": repo.language,
+                "languages": repo.languages,
+                "stars": repo.stars,
+                "topics": repo.topics,
+                "last_push": repo.last_push,
+                "commit_count": repo.commit_count,
+            }
+            for repo in repos
+        ]
 
     inference = infer_practice_and_careers(
         settings.groq_api_key or "", settings.groq_model, summaries
@@ -219,31 +300,7 @@ def recompute_insights(
         )
 
     gamification = compute_xp_and_badges(summaries)
-    existing_badges = {
-        badge.label: badge
-        for badge in db.query(Badge).filter(Badge.user_id == current_user.id).all()
-    }
-    for badge in gamification.badges:
-        existing = existing_badges.get(badge["label"])
-        if existing:
-            existing.description = badge["description"]
-            existing.criteria = badge["criteria"]
-            existing.rarity = badge["rarity"]
-            existing.achieved = badge["achieved"]
-            if badge["achieved"] is False:
-                existing.claimed = False
-        else:
-            db.add(
-                Badge(
-                    user_id=current_user.id,
-                    label=badge["label"],
-                    description=badge["description"],
-                    criteria=badge["criteria"],
-                    rarity=badge["rarity"],
-                    achieved=badge["achieved"],
-                    claimed=badge.get("claimed", False),
-                )
-            )
+    _sync_badges(db, current_user.id, gamification.badges)
 
     db.commit()
     return get_user(current_user.username, db)
@@ -254,7 +311,7 @@ def claim_badges(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    db.query(Badge).filter(
+    updated_rows = db.query(Badge).filter(
         Badge.user_id == current_user.id, Badge.achieved.is_(True), Badge.claimed.is_(False)
     ).update({Badge.claimed: True})
     db.commit()
@@ -330,13 +387,16 @@ def get_leaderboard(db: Session = Depends(get_db)):
     for user in users:
         repos = db.query(Repo).filter(Repo.user_id == user.id).all()
         gamification = compute_xp_and_badges([repo.__dict__ for repo in repos])
+        badge_rows = db.query(Badge).filter(Badge.user_id == user.id).all()
+        total_xp = gamification.xp + _badge_bonus_xp(badge_rows)
+        level = max(1, total_xp // 500 + 1)
         entries.append(
             LeaderboardEntryOut(
                 id=user.id,
                 username=user.username,
                 avatar_url=user.avatar_url,
-                level=gamification.level,
-                xp=gamification.xp,
+                level=level,
+                xp=total_xp,
                 delta="+0 XP",
             )
         )
